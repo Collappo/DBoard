@@ -1217,12 +1217,12 @@ export default function App() {
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     
-    // Zoom on pinch trackpad or scroll wheel with Ctrl
-    if (e.ctrlKey || e.metaKey) {
-      const zoomIntensity = 0.08;
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    // Zoom directly with scroll wheel up/down (deltaY)
+    if (e.deltaY !== 0) {
+      const zoomIntensity = 0.05;
       const rect = canvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
@@ -1230,22 +1230,22 @@ export default function App() {
       const wheel = e.deltaY < 0 ? 1 : -1;
       const nextZoom = Math.min(4, Math.max(0.15, Number((canvasState.zoom + wheel * zoomIntensity).toFixed(2))));
       
-      // Keep cursor position absolute in canvas coordinate space after zoom shift
       const zoomFactor = nextZoom / canvasState.zoom;
       const nextPanX = mouseX - (mouseX - canvasState.panX) * zoomFactor;
       const nextPanY = mouseY - (mouseY - canvasState.panY) * zoomFactor;
       
-      setCanvasState({
+      setCanvasState((prev) => ({
         zoom: nextZoom,
         panX: nextPanX,
         panY: nextPanY,
-      });
-    } else {
-      // Normal two-finger / wheel pan scroll navigation
+      }));
+    }
+    
+    // Pan horizontally on deltaX
+    if (e.deltaX !== 0) {
       setCanvasState((prev) => ({
         ...prev,
         panX: prev.panX - e.deltaX,
-        panY: prev.panY - e.deltaY,
       }));
     }
   };
@@ -1680,8 +1680,8 @@ export default function App() {
               <span>Instrukcja nawigacji</span>
             </h3>
             <ul className="text-xs space-y-2.5 text-gray-600 dark:text-gray-400 leading-relaxed list-disc list-inside">
-              <li><strong>Poruszanie się po tablicy:</strong> Przeciągnij dwoma palcami na gładziku, użyj scrolla myszy lub przytrzymaj prawy/środkowy przycisk myszy i draguj.</li>
-              <li><strong>Przybliżanie i oddalanie:</strong> Trzymaj <kbd className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded border border-gray-200 dark:border-gray-700 font-mono text-[10px]">Ctrl</kbd> lub <kbd className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded border border-gray-200 dark:border-gray-700 font-mono text-[10px]">Cmd</kbd> i kręć rolką myszy. Możesz też kliknąć wskaźnik procentowy w konsoli.</li>
+              <li><strong>Poruszanie się po tablicy:</strong> Przeciągnij dwoma palcami poziomo na gładziku lub przytrzymaj prawy/środkowy przycisk myszy i draguj.</li>
+              <li><strong>Przybliżanie i oddalanie:</strong> Kręć kółkiem myszy (scroll góra/dół) bezpośrednio. Możesz też kliknąć wskaźnik procentowy w konsoli.</li>
               <li><strong>Zaznaczanie:</strong> Narzędziem Pointer kliknij na element lub przeciągnij nad wieloma, aby utworzyć obszar zaznaczenia.</li>
               <li><strong>Transformacje:</strong> Przeciągaj krawędzie zaznaczonego wektora, aby go skalować, lub kółko na górze, aby nim obracać.</li>
               <li><strong>Klawisze skrótu:</strong> <kbd className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded border border-gray-200 dark:border-gray-700 font-mono text-[10px]">Del</kbd> usuwa zaznaczenie, a strzałki pozwalają przesuwać elementy o pojedyncze piksele.</li>
