@@ -58,7 +58,7 @@ export default function App() {
   
   // Actions tracking
   const [activeAction, setActiveAction] = useState<
-    'none' | 'drawing' | 'spraying' | 'panning' | 'selecting' | 'moving' | 'rotating' | 'scaling'
+    'none' | 'drawing' | 'spraying' | 'panning' | 'selecting' | 'moving' | 'rotating' | 'scaling' | 'erasing'
   >('none');
   
   const [scalingHandle, setScalingHandle] = useState<string | null>(null);
@@ -91,6 +91,10 @@ export default function App() {
 
   // Spray continuous emitter interval
   const sprayIntervalRef = useRef<number | null>(null);
+
+  // Initial state tracking for scaling / rotating (single and groups)
+  const initialElementsRef = useRef<BoardElement[] | null>(null);
+  const initialGroupBoundsRef = useRef<{ minX: number; minY: number; maxX: number; maxY: number } | null>(null);
 
   // Initialize and load persistent elements if any
   useEffect(() => {
@@ -506,62 +510,128 @@ export default function App() {
       
       // Draw selected elements bounding boxes & handles
       if (activeTool === 'pointer' && selectedElementIds.length > 0) {
-        selectedElementIds.forEach((id) => {
-          const el = elements.find((e) => e.id === id);
-          if (!el) return;
-          
-          ctx.save();
-          const cx = el.x + el.width / 2;
-          const cy = el.y + el.height / 2;
-          ctx.translate(cx, cy);
-          ctx.rotate((el.rotation * Math.PI) / 180);
-          
-          const halfW = el.width / 2;
-          const halfH = el.height / 2;
-          
-          // Outer bounding box outline
-          ctx.strokeStyle = '#6366f1';
-          ctx.lineWidth = 1.5 / canvasState.zoom;
-          ctx.setLineDash([2, 2]);
-          ctx.strokeRect(-halfW, -halfH, el.width, el.height);
-          
-          // Draw rotation hook
-          ctx.setLineDash([]);
-          ctx.beginPath();
-          ctx.moveTo(0, -halfH);
-          ctx.lineTo(0, -halfH - 20 / canvasState.zoom);
-          ctx.stroke();
-          
-          // Draw handles (TL, TR, BL, BR, ROT)
-          // Scale handles visually depending on zoom
-          const handleSize = 7 / canvasState.zoom;
-          ctx.fillStyle = '#ffffff';
-          ctx.strokeStyle = '#4f46e5';
-          ctx.lineWidth = 2 / canvasState.zoom;
-          
-          // Corner handles
-          const corners = [
-            { x: -halfW, y: -halfH }, // TL
-            { x: halfW, y: -halfH },  // TR
-            { x: -halfW, y: halfH },  // BL
-            { x: halfW, y: halfH },   // BR
-          ];
-          
-          corners.forEach((c) => {
+        if (selectedElementIds.length === 1) {
+          selectedElementIds.forEach((id) => {
+            const el = elements.find((e) => e.id === id);
+            if (!el) return;
+            
+            ctx.save();
+            const cx = el.x + el.width / 2;
+            const cy = el.y + el.height / 2;
+            ctx.translate(cx, cy);
+            ctx.rotate((el.rotation * Math.PI) / 180);
+            
+            const halfW = el.width / 2;
+            const halfH = el.height / 2;
+            
+            // Outer bounding box outline
+            ctx.strokeStyle = '#6366f1';
+            ctx.lineWidth = 1.5 / canvasState.zoom;
+            ctx.setLineDash([2, 2]);
+            ctx.strokeRect(-halfW, -halfH, el.width, el.height);
+            
+            // Draw rotation hook
+            ctx.setLineDash([]);
             ctx.beginPath();
-            ctx.rect(c.x - handleSize / 2, c.y - handleSize / 2, handleSize, handleSize);
+            ctx.moveTo(0, -halfH);
+            ctx.lineTo(0, -halfH - 20 / canvasState.zoom);
+            ctx.stroke();
+            
+            // Draw handles (TL, TR, BL, BR, ROT)
+            // Scale handles visually depending on zoom
+            const handleSize = 7 / canvasState.zoom;
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#4f46e5';
+            ctx.lineWidth = 2 / canvasState.zoom;
+            
+            // Corner handles
+            const corners = [
+              { x: -halfW, y: -halfH }, // TL
+              { x: halfW, y: -halfH },  // TR
+              { x: -halfW, y: halfH },  // BL
+              { x: halfW, y: halfH },   // BR
+            ];
+            
+            corners.forEach((c) => {
+              ctx.beginPath();
+              ctx.rect(c.x - handleSize / 2, c.y - handleSize / 2, handleSize, handleSize);
+              ctx.fill();
+              ctx.stroke();
+            });
+            
+            // Rotation handle
+            ctx.beginPath();
+            ctx.arc(0, -halfH - 20 / canvasState.zoom, handleSize / 1.5, 0, Math.PI * 2);
             ctx.fill();
             ctx.stroke();
+            
+            ctx.restore();
+          });
+        } else {
+          // MULTIPLE ELEMENTS: draw a single combined selection box around the unrotated AABB
+          let minX = Infinity;
+          let minY = Infinity;
+          let maxX = -Infinity;
+          let maxY = -Infinity;
+          selectedElementIds.forEach((id) => {
+            const el = elements.find((e) => e.id === id);
+            if (!el) return;
+            const bounds = getElementBounds(el);
+            if (bounds.minX < minX) minX = bounds.minX;
+            if (bounds.minY < minY) minY = bounds.minY;
+            if (bounds.maxX > maxX) maxX = bounds.maxX;
+            if (bounds.maxY > maxY) maxY = bounds.maxY;
           });
           
-          // Rotation handle
-          ctx.beginPath();
-          ctx.arc(0, -halfH - 20 / canvasState.zoom, handleSize / 1.5, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
-          
-          ctx.restore();
-        });
+          if (minX !== Infinity) {
+            ctx.save();
+            const groupW = maxX - minX;
+            const groupH = maxY - minY;
+            const groupCx = minX + groupW / 2;
+            
+            // Outer bounding box outline
+            ctx.strokeStyle = '#6366f1';
+            ctx.lineWidth = 1.5 / canvasState.zoom;
+            ctx.setLineDash([2, 2]);
+            ctx.strokeRect(minX, minY, groupW, groupH);
+            
+            // Draw rotation hook (from center-top of group AABB)
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.moveTo(groupCx, minY);
+            ctx.lineTo(groupCx, minY - 20 / canvasState.zoom);
+            ctx.stroke();
+            
+            // Draw handles
+            const handleSize = 7 / canvasState.zoom;
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#4f46e5';
+            ctx.lineWidth = 2 / canvasState.zoom;
+            
+            // Corner handles of group box in canvas space
+            const corners = [
+              { x: minX, y: minY },  // TL
+              { x: maxX, y: minY },  // TR
+              { x: minX, y: maxY },  // BL
+              { x: maxX, y: maxY },  // BR
+            ];
+            
+            corners.forEach((c) => {
+              ctx.beginPath();
+              ctx.rect(c.x - handleSize / 2, c.y - handleSize / 2, handleSize, handleSize);
+              ctx.fill();
+              ctx.stroke();
+            });
+            
+            // Rotation handle
+            ctx.beginPath();
+            ctx.arc(groupCx, minY - 20 / canvasState.zoom, handleSize / 1.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            
+            ctx.restore();
+          }
+        }
       }
       
       ctx.restore();
@@ -631,6 +701,7 @@ export default function App() {
         if (el) {
           const handleHit = checkHandleHit(canvasPt, el);
           if (handleHit) {
+            initialElementsRef.current = JSON.parse(JSON.stringify(elements));
             setScalingHandle(handleHit);
             setDragStart(canvasPt);
             if (handleHit === 'ROT') {
@@ -640,6 +711,35 @@ export default function App() {
             }
             return;
           }
+        }
+      } else if (selectedElementIds.length > 1) {
+        const handleHit = checkGroupHandleHit(canvasPt);
+        if (handleHit) {
+          initialElementsRef.current = JSON.parse(JSON.stringify(elements));
+          
+          let minX = Infinity;
+          let minY = Infinity;
+          let maxX = -Infinity;
+          let maxY = -Infinity;
+          selectedElementIds.forEach((id) => {
+            const el = elements.find((e) => e.id === id);
+            if (!el) return;
+            const bounds = getElementBounds(el);
+            if (bounds.minX < minX) minX = bounds.minX;
+            if (bounds.minY < minY) minY = bounds.minY;
+            if (bounds.maxX > maxX) maxX = bounds.maxX;
+            if (bounds.maxY > maxY) maxY = bounds.maxY;
+          });
+          initialGroupBoundsRef.current = { minX, minY, maxX, maxY };
+          
+          setScalingHandle(handleHit);
+          setDragStart(canvasPt);
+          if (handleHit === 'ROT') {
+            setActiveAction('rotating');
+          } else {
+            setActiveAction('scaling');
+          }
+          return;
         }
       }
       
@@ -855,6 +955,9 @@ export default function App() {
     
     // Vector element removal eraser
     else if (activeTool === 'eraser') {
+      setActiveAction('erasing');
+      setDragStart(canvasPt);
+      
       let hitId: string | null = null;
       for (let i = elements.length - 1; i >= 0; i--) {
         if (isPointInElement(canvasPt, elements[i])) {
@@ -865,7 +968,7 @@ export default function App() {
       
       if (hitId) {
         const nextElements = elements.filter((el) => el.id !== hitId);
-        commitToHistory(nextElements);
+        setElements(nextElements);
         setSelectedElementIds([]);
       }
     }
@@ -940,45 +1043,46 @@ export default function App() {
     }
     
     // Scale Handle Transformation Math
-    else if (activeAction === 'scaling' && selectedElementIds.length === 1 && scalingHandle) {
-      const el = elements.find((x) => x.id === selectedElementIds[0]);
-      if (el) {
-        const localMouse = toLocalSpace(canvasPt, el);
-        const halfW = el.width / 2;
-        const halfH = el.height / 2;
+    else if (activeAction === 'scaling' && selectedElementIds.length === 1 && scalingHandle && initialElementsRef.current) {
+      const initialElements = initialElementsRef.current;
+      const initialEl = initialElements.find((x) => x.id === selectedElementIds[0]);
+      if (initialEl) {
+        const localMouse = toLocalSpace(canvasPt, initialEl);
+        const halfW = initialEl.width / 2;
+        const halfH = initialEl.height / 2;
         
-        let newW = el.width;
-        let newH = el.height;
+        let newW = initialEl.width;
+        let newH = initialEl.height;
         let localCenterOffset = { x: 0, y: 0 };
         
         switch (scalingHandle) {
           case 'BR':
             newW = Math.max(10, localMouse.x - (-halfW));
             newH = Math.max(10, localMouse.y - (-halfH));
-            localCenterOffset = { x: (newW - el.width) / 2, y: (newH - el.height) / 2 };
+            localCenterOffset = { x: (newW - initialEl.width) / 2, y: (newH - initialEl.height) / 2 };
             break;
           case 'BL':
             newW = Math.max(10, halfW - localMouse.x);
             newH = Math.max(10, localMouse.y - (-halfH));
-            localCenterOffset = { x: -(newW - el.width) / 2, y: (newH - el.height) / 2 };
+            localCenterOffset = { x: -(newW - initialEl.width) / 2, y: (newH - initialEl.height) / 2 };
             break;
           case 'TR':
             newW = Math.max(10, localMouse.x - (-halfW));
             newH = Math.max(10, halfH - localMouse.y);
-            localCenterOffset = { x: (newW - el.width) / 2, y: -(newH - el.height) / 2 };
+            localCenterOffset = { x: (newW - initialEl.width) / 2, y: -(newH - initialEl.height) / 2 };
             break;
           case 'TL':
             newW = Math.max(10, halfW - localMouse.x);
             newH = Math.max(10, halfH - localMouse.y);
-            localCenterOffset = { x: -(newW - el.width) / 2, y: -(newH - el.height) / 2 };
+            localCenterOffset = { x: -(newW - initialEl.width) / 2, y: -(newH - initialEl.height) / 2 };
             break;
         }
         
         // Handle proportional aspect ratio preservation for Images, Stars & Texts
-        if (el.type === 'image' || el.type === 'text' || el.type === 'star') {
-          const ratio = el.width / el.height;
+        if (initialEl.type === 'image' || initialEl.type === 'text' || initialEl.type === 'star') {
+          const ratio = initialEl.width / initialEl.height;
           // Use largest stretch scale
-          if (newW / el.width > newH / el.height) {
+          if (newW / initialEl.width > newH / initialEl.height) {
             newH = newW / ratio;
           } else {
             newW = newH * ratio;
@@ -987,30 +1091,30 @@ export default function App() {
           // Re-adjust offsets
           switch (scalingHandle) {
             case 'BR':
-              localCenterOffset = { x: (newW - el.width) / 2, y: (newH - el.height) / 2 };
+              localCenterOffset = { x: (newW - initialEl.width) / 2, y: (newH - initialEl.height) / 2 };
               break;
             case 'BL':
-              localCenterOffset = { x: -(newW - el.width) / 2, y: (newH - el.height) / 2 };
+              localCenterOffset = { x: -(newW - initialEl.width) / 2, y: (newH - initialEl.height) / 2 };
               break;
             case 'TR':
-              localCenterOffset = { x: (newW - el.width) / 2, y: -(newH - el.height) / 2 };
+              localCenterOffset = { x: (newW - initialEl.width) / 2, y: -(newH - initialEl.height) / 2 };
               break;
             case 'TL':
-              localCenterOffset = { x: -(newW - el.width) / 2, y: -(newH - el.height) / 2 };
+              localCenterOffset = { x: -(newW - initialEl.width) / 2, y: -(newH - initialEl.height) / 2 };
               break;
           }
         }
         
         // Translate rotated offset to canvas coordinates
-        const rad = (el.rotation * Math.PI) / 180;
+        const rad = (initialEl.rotation * Math.PI) / 180;
         const cx_offset = localCenterOffset.x * Math.cos(rad) - localCenterOffset.y * Math.sin(rad);
         const cy_offset = localCenterOffset.x * Math.sin(rad) + localCenterOffset.y * Math.cos(rad);
         
-        const newCx = el.x + el.width / 2 + cx_offset;
-        const newCy = el.y + el.height / 2 + cy_offset;
+        const newCx = initialEl.x + initialEl.width / 2 + cx_offset;
+        const newCy = initialEl.y + initialEl.height / 2 + cy_offset;
         
         const updatedElement: BoardElement = {
-          ...el,
+          ...initialEl,
           x: newCx - newW / 2,
           y: newCy - newH / 2,
           width: newW,
@@ -1018,21 +1122,137 @@ export default function App() {
         };
         
         // For dynamic texts: scale font size matching height change
-        if (el.type === 'text' && el.fontSize) {
-          const scaleRatio = newH / el.height;
-          updatedElement.fontSize = Math.max(6, Math.round(el.fontSize * scaleRatio));
+        if (initialEl.type === 'text' && initialEl.fontSize) {
+          const scaleRatio = newH / initialEl.height;
+          updatedElement.fontSize = Math.max(6, Math.round(initialEl.fontSize * scaleRatio));
+        }
+
+        // Scale underlying brush points or spray dots relative to size changes
+        if (initialEl.type === 'brush' && initialEl.points) {
+          const scaleX = initialEl.width > 0 ? newW / initialEl.width : 1;
+          const scaleY = initialEl.height > 0 ? newH / initialEl.height : 1;
+          updatedElement.points = initialEl.points.map((p) => ({
+            x: p.x * scaleX,
+            y: p.y * scaleY,
+          }));
+        } else if (initialEl.type === 'spray' && initialEl.dots) {
+          const scaleX = initialEl.width > 0 ? newW / initialEl.width : 1;
+          const scaleY = initialEl.height > 0 ? newH / initialEl.height : 1;
+          updatedElement.dots = initialEl.dots.map((d) => ({
+            x: d.x * scaleX,
+            y: d.y * scaleY,
+          }));
         }
         
-        setElements(elements.map((x) => (x.id === el.id ? updatedElement : x)));
+        setElements(elements.map((x) => (x.id === initialEl.id ? updatedElement : x)));
       }
     }
     
+    // Group Scale Transformation Math
+    else if (activeAction === 'scaling' && selectedElementIds.length > 1 && scalingHandle && initialGroupBoundsRef.current && initialElementsRef.current) {
+      const initialElements = initialElementsRef.current;
+      const bounds = initialGroupBoundsRef.current;
+      const initW = bounds.maxX - bounds.minX;
+      const initH = bounds.maxY - bounds.minY;
+      
+      let newMinX = bounds.minX;
+      let newMinY = bounds.minY;
+      let newMaxX = bounds.maxX;
+      let newMaxY = bounds.maxY;
+      
+      switch (scalingHandle) {
+        case 'BR':
+          newMaxX = Math.max(bounds.minX + 10, canvasPt.x);
+          newMaxY = Math.max(bounds.minY + 10, canvasPt.y);
+          break;
+        case 'BL':
+          newMinX = Math.min(bounds.maxX - 10, canvasPt.x);
+          newMaxY = Math.max(bounds.minY + 10, canvasPt.y);
+          break;
+        case 'TR':
+          newMaxX = Math.max(bounds.minX + 10, canvasPt.x);
+          newMinY = Math.min(bounds.maxY - 10, canvasPt.y);
+          break;
+        case 'TL':
+          newMinX = Math.min(bounds.maxX - 10, canvasPt.x);
+          newMinY = Math.min(bounds.maxY - 10, canvasPt.y);
+          break;
+      }
+      
+      const scaleX = initW > 0 ? (newMaxX - newMinX) / initW : 1;
+      const scaleY = initH > 0 ? (newMaxY - newMinY) / initH : 1;
+      
+      const nextElements = elements.map((el) => {
+        if (!selectedElementIds.includes(el.id)) return el;
+        
+        const initialEl = initialElements.find((x) => x.id === el.id);
+        if (!initialEl) return el;
+        
+        const elCx = initialEl.x + initialEl.width / 2;
+        const elCy = initialEl.y + initialEl.height / 2;
+        
+        let newElCx = elCx;
+        let newElCy = elCy;
+        
+        switch (scalingHandle) {
+          case 'BR':
+            newElCx = newMinX + (elCx - bounds.minX) * scaleX;
+            newElCy = newMinY + (elCy - bounds.minY) * scaleY;
+            break;
+          case 'BL':
+            newElCx = newMaxX - (bounds.maxX - elCx) * scaleX;
+            newElCy = newMinY + (elCy - bounds.minY) * scaleY;
+            break;
+          case 'TR':
+            newElCx = newMaxX - (bounds.maxX - elCx) * scaleX;
+            newElCy = newMaxY - (bounds.maxY - elCy) * scaleY;
+            break;
+          case 'TL':
+            newElCx = newMinX + (elCx - bounds.minX) * scaleX;
+            newElCy = newMaxY - (bounds.maxY - elCy) * scaleY;
+            break;
+        }
+        
+        const newW = initialEl.width * scaleX;
+        const newH = initialEl.height * scaleY;
+        
+        const updatedElement: BoardElement = {
+          ...initialEl,
+          x: newElCx - newW / 2,
+          y: newElCy - newH / 2,
+          width: newW,
+          height: newH,
+        };
+        
+        if (initialEl.type === 'text' && initialEl.fontSize) {
+          updatedElement.fontSize = Math.max(6, Math.round(initialEl.fontSize * scaleY));
+        }
+        
+        if (initialEl.type === 'brush' && initialEl.points) {
+          updatedElement.points = initialEl.points.map((p) => ({
+            x: p.x * scaleX,
+            y: p.y * scaleY,
+          }));
+        } else if (initialEl.type === 'spray' && initialEl.dots) {
+          updatedElement.dots = initialEl.dots.map((d) => ({
+            x: d.x * scaleX,
+            y: d.y * scaleY,
+          }));
+        }
+        
+        return updatedElement;
+      });
+      
+      setElements(nextElements);
+    }
+    
     // Rotate Transformation Math
-    else if (activeAction === 'rotating' && selectedElementIds.length === 1) {
-      const el = elements.find((x) => x.id === selectedElementIds[0]);
-      if (el) {
-        const cx = el.x + el.width / 2;
-        const cy = el.y + el.height / 2;
+    else if (activeAction === 'rotating' && selectedElementIds.length === 1 && initialElementsRef.current) {
+      const initialElements = initialElementsRef.current;
+      const initialEl = initialElements.find((x) => x.id === selectedElementIds[0]);
+      if (initialEl) {
+        const cx = initialEl.x + initialEl.width / 2;
+        const cy = initialEl.y + initialEl.height / 2;
         
         // Compute rotation angle
         const angleRad = Math.atan2(canvasPt.y - cy, canvasPt.x - cx);
@@ -1043,15 +1263,64 @@ export default function App() {
           angleDeg = Math.round(angleDeg / 15) * 15;
         }
         
+        angleDeg = (angleDeg + 360) % 360;
+        
         setElements(
           elements.map((x) => {
-            if (x.id === el.id) {
+            if (x.id === initialEl.id) {
               return { ...x, rotation: angleDeg };
             }
             return x;
           })
         );
       }
+    }
+    
+    // Group Rotate Transformation Math
+    else if (activeAction === 'rotating' && selectedElementIds.length > 1 && initialGroupBoundsRef.current && initialElementsRef.current) {
+      const initialElements = initialElementsRef.current;
+      const bounds = initialGroupBoundsRef.current;
+      
+      const groupCx = (bounds.minX + bounds.maxX) / 2;
+      const groupCy = (bounds.minY + bounds.maxY) / 2;
+      
+      // Compute rotation angle
+      const angleRad = Math.atan2(canvasPt.y - groupCy, canvasPt.x - groupCx);
+      let angleDeg = (angleRad * 180) / Math.PI + 90; // offset hook starting 12-o-clock
+      
+      if (e.shiftKey) {
+        angleDeg = Math.round(angleDeg / 15) * 15;
+      }
+      
+      const dTheta = (angleDeg + 360) % 360;
+      const rad = (dTheta * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      
+      const nextElements = elements.map((el) => {
+        if (!selectedElementIds.includes(el.id)) return el;
+        
+        const initialEl = initialElements.find((x) => x.id === el.id);
+        if (!initialEl) return el;
+        
+        const elCx = initialEl.x + initialEl.width / 2;
+        const elCy = initialEl.y + initialEl.height / 2;
+        
+        // Rotate center of element around group center
+        const dx = elCx - groupCx;
+        const dy = elCy - groupCy;
+        const newCx = dx * cos - dy * sin + groupCx;
+        const newCy = dx * sin + dy * cos + groupCy;
+        
+        return {
+          ...el,
+          x: newCx - el.width / 2,
+          y: newCy - el.height / 2,
+          rotation: (initialEl.rotation + dTheta) % 360,
+        };
+      });
+      
+      setElements(nextElements);
     }
     
     // Selection box area tracking
@@ -1065,6 +1334,38 @@ export default function App() {
         w: Math.abs(currentWidth),
         h: Math.abs(currentHeight),
       });
+    }
+    
+    // Continuous drag eraser tracking
+    else if (activeAction === 'erasing') {
+      const dx = canvasPt.x - lastMousePos.x;
+      const dy = canvasPt.y - lastMousePos.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const steps = Math.max(1, Math.ceil(distance / 12)); // fine-grained step checks
+      
+      let nextElements = [...elements];
+      let didErase = false;
+      
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const pt = {
+          x: lastMousePos.x + dx * t,
+          y: lastMousePos.y + dy * t,
+        };
+        
+        for (let i = nextElements.length - 1; i >= 0; i--) {
+          if (isPointInElement(pt, nextElements[i])) {
+            nextElements.splice(i, 1);
+            didErase = true;
+            break;
+          }
+        }
+      }
+      
+      if (didErase) {
+        setElements(nextElements);
+        setSelectedElementIds([]);
+      }
     }
   };
 
@@ -1182,7 +1483,7 @@ export default function App() {
     }
     
     // Save moved, scaled or rotated vectors to history log
-    else if (['moving', 'scaling', 'rotating'].includes(activeAction)) {
+    else if (['moving', 'scaling', 'rotating', 'erasing'].includes(activeAction)) {
       commitToHistory(elements);
     }
     
@@ -1208,6 +1509,42 @@ export default function App() {
     // Rotation Handle hanging above
     const rotHandleY = -halfH - 20 / canvasState.zoom;
     const distToRot = Math.sqrt(local.x * local.x + (local.y - rotHandleY) * (local.y - rotHandleY));
+    if (distToRot < tolerance) return 'ROT';
+    
+    return null;
+  };
+
+  // Check group selection box handles (axis-aligned box of multiple selected items)
+  const checkGroupHandleHit = (p: Point): string | null => {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    selectedElementIds.forEach((id) => {
+      const el = elements.find((e) => e.id === id);
+      if (!el) return;
+      const bounds = getElementBounds(el);
+      if (bounds.minX < minX) minX = bounds.minX;
+      if (bounds.minY < minY) minY = bounds.minY;
+      if (bounds.maxX > maxX) maxX = bounds.maxX;
+      if (bounds.maxY > maxY) maxY = bounds.maxY;
+    });
+    
+    if (minX === Infinity) return null;
+    
+    const groupW = maxX - minX;
+    const groupH = maxY - minY;
+    const groupCx = minX + groupW / 2;
+    
+    const tolerance = 10 / canvasState.zoom;
+    
+    if (Math.abs(p.x - minX) < tolerance && Math.abs(p.y - minY) < tolerance) return 'TL';
+    if (Math.abs(p.x - maxX) < tolerance && Math.abs(p.y - minY) < tolerance) return 'TR';
+    if (Math.abs(p.x - minX) < tolerance && Math.abs(p.y - maxY) < tolerance) return 'BL';
+    if (Math.abs(p.x - maxX) < tolerance && Math.abs(p.y - maxY) < tolerance) return 'BR';
+    
+    const rotHandleY = minY - 20 / canvasState.zoom;
+    const distToRot = Math.sqrt((p.x - groupCx) ** 2 + (p.y - rotHandleY) ** 2);
     if (distToRot < tolerance) return 'ROT';
     
     return null;
@@ -1561,7 +1898,7 @@ export default function App() {
           </div>
           <span className="font-sans font-bold tracking-tight text-sm text-gray-800 dark:text-gray-100">DBoard</span>
           <div className="bg-black/5 dark:bg-white/8 px-2 py-1 rounded-[6px] text-[10px] font-semibold text-gray-500 dark:text-[#a1a1aa] tracking-wider uppercase select-none">
-            Beta 0.0.1
+            Beta 0.8
           </div>
         </div>
 
@@ -1623,22 +1960,21 @@ export default function App() {
       </div>
 
       {/* 5. Center-Bottom Floating Dock (Main Drawing Tools bar) */}
-      <div
-        ref={toolbarRef}
-        className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 max-w-[90vw] pointer-events-none"
-      >
-        <Toolbar
-          activeTool={activeTool}
-          setActiveTool={(tool) => {
-            setActiveTool(tool);
-            // Clear selections if switched to drawing tools
-            if (tool !== 'pointer') {
-              setSelectedElementIds([]);
-            }
-          }}
-          settings={settings}
-          updateSettings={updateSettings}
-        />
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 max-w-[90vw] pointer-events-none">
+        <div ref={toolbarRef}>
+          <Toolbar
+            activeTool={activeTool}
+            setActiveTool={(tool) => {
+              setActiveTool(tool);
+              // Clear selections if switched to drawing tools
+              if (tool !== 'pointer') {
+                setSelectedElementIds([]);
+              }
+            }}
+            settings={settings}
+            updateSettings={updateSettings}
+          />
+        </div>
       </div>
 
       {/* 6. Right-Bottom Floating Dock (Zoom and utilities controls panel) */}
