@@ -51,7 +51,7 @@ export default function App() {
     fontWeight: 'normal',
     fontStyle: 'normal',
     brushSmoothing: true,
-    theme: 'light',
+    theme: 'dark',
   });
 
   const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
@@ -1893,9 +1893,9 @@ export default function App() {
       >
         {/* Brand Logo & Title */}
         <div className="flex items-center gap-3 px-4 py-2 rounded-[20px] glass-panel shadow-md pointer-events-auto border border-gray-200/50 dark:border-gray-800/50 animate-in fade-in">
-          <div className="w-8 h-8 rounded-lg bg-[#6366f1] text-white flex items-center justify-center font-black text-lg shadow-[0_0_15px_rgba(99,102,241,0.3)] select-none">
+          {/* <div className="w-8 h-8 rounded-lg bg-[#6366f1] text-white flex items-center justify-center font-black text-lg shadow-[0_0_15px_rgba(99,102,241,0.3)] select-none">
             D
-          </div>
+          </div> */}
           <span className="font-sans font-bold tracking-tight text-sm text-gray-800 dark:text-gray-100">DBoard</span>
           <div className="bg-black/5 dark:bg-white/8 px-2 py-1 rounded-[6px] text-[10px] font-semibold text-gray-500 dark:text-[#a1a1aa] tracking-wider uppercase select-none">
             Beta 0.8
