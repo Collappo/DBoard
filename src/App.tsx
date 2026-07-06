@@ -58,7 +58,7 @@ export default function App() {
   
   // Actions tracking
   const [activeAction, setActiveAction] = useState<
-    'none' | 'drawing' | 'spraying' | 'panning' | 'selecting' | 'moving' | 'rotating' | 'scaling'
+    'none' | 'drawing' | 'spraying' | 'panning' | 'selecting' | 'moving' | 'rotating' | 'scaling' | 'erasing'
   >('none');
   
   const [scalingHandle, setScalingHandle] = useState<string | null>(null);
@@ -855,6 +855,9 @@ export default function App() {
     
     // Vector element removal eraser
     else if (activeTool === 'eraser') {
+      setActiveAction('erasing');
+      setDragStart(canvasPt);
+      
       let hitId: string | null = null;
       for (let i = elements.length - 1; i >= 0; i--) {
         if (isPointInElement(canvasPt, elements[i])) {
@@ -865,7 +868,7 @@ export default function App() {
       
       if (hitId) {
         const nextElements = elements.filter((el) => el.id !== hitId);
-        commitToHistory(nextElements);
+        setElements(nextElements);
         setSelectedElementIds([]);
       }
     }
@@ -1022,6 +1025,23 @@ export default function App() {
           const scaleRatio = newH / el.height;
           updatedElement.fontSize = Math.max(6, Math.round(el.fontSize * scaleRatio));
         }
+
+        // Scale underlying brush points or spray dots relative to size changes
+        if (el.type === 'brush' && el.points) {
+          const scaleX = el.width > 0 ? newW / el.width : 1;
+          const scaleY = el.height > 0 ? newH / el.height : 1;
+          updatedElement.points = el.points.map((p) => ({
+            x: p.x * scaleX,
+            y: p.y * scaleY,
+          }));
+        } else if (el.type === 'spray' && el.dots) {
+          const scaleX = el.width > 0 ? newW / el.width : 1;
+          const scaleY = el.height > 0 ? newH / el.height : 1;
+          updatedElement.dots = el.dots.map((d) => ({
+            x: d.x * scaleX,
+            y: d.y * scaleY,
+          }));
+        }
         
         setElements(elements.map((x) => (x.id === el.id ? updatedElement : x)));
       }
@@ -1065,6 +1085,38 @@ export default function App() {
         w: Math.abs(currentWidth),
         h: Math.abs(currentHeight),
       });
+    }
+    
+    // Continuous drag eraser tracking
+    else if (activeAction === 'erasing') {
+      const dx = canvasPt.x - lastMousePos.x;
+      const dy = canvasPt.y - lastMousePos.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const steps = Math.max(1, Math.ceil(distance / 12)); // fine-grained step checks
+      
+      let nextElements = [...elements];
+      let didErase = false;
+      
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const pt = {
+          x: lastMousePos.x + dx * t,
+          y: lastMousePos.y + dy * t,
+        };
+        
+        for (let i = nextElements.length - 1; i >= 0; i--) {
+          if (isPointInElement(pt, nextElements[i])) {
+            nextElements.splice(i, 1);
+            didErase = true;
+            break;
+          }
+        }
+      }
+      
+      if (didErase) {
+        setElements(nextElements);
+        setSelectedElementIds([]);
+      }
     }
   };
 
@@ -1182,7 +1234,7 @@ export default function App() {
     }
     
     // Save moved, scaled or rotated vectors to history log
-    else if (['moving', 'scaling', 'rotating'].includes(activeAction)) {
+    else if (['moving', 'scaling', 'rotating', 'erasing'].includes(activeAction)) {
       commitToHistory(elements);
     }
     
