@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import gsap from 'gsap';
 import {
   MousePointer,
   Pencil,
@@ -12,7 +13,10 @@ import {
   Eraser,
   TypeIcon,
   AlignLeft,
-  Check
+  Check,
+  Image as ImageIcon,
+  Link as LinkIcon,
+  Upload as UploadIcon
 } from 'lucide-react';
 import { ToolType, BoardSettings } from '../types';
 
@@ -21,6 +25,8 @@ interface ToolbarProps {
   setActiveTool: (tool: ToolType) => void;
   settings: BoardSettings;
   updateSettings: (settings: Partial<BoardSettings>) => void;
+  onImportImageFile: (file: File) => void;
+  onImportImageUrl: (url: string) => void;
 }
 
 export default function Toolbar({
@@ -28,7 +34,80 @@ export default function Toolbar({
   setActiveTool,
   settings,
   updateSettings,
+  onImportImageFile,
+  onImportImageUrl,
 }: ToolbarProps) {
+  const [showImageMenu, setShowImageMenu] = useState(false);
+  const [showLinkInput, setShowLinkInput] = useState(false);
+  const [imageUrl, setImageUrl] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const contextualRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setShowImageMenu(false);
+    setShowLinkInput(false);
+
+    // Spring pop animation on active tool icon
+    const activeBtnIcon = document.querySelector(`#tool-btn-${activeTool} svg`);
+    if (activeBtnIcon) {
+      gsap.killTweensOf(activeBtnIcon);
+      gsap.fromTo(activeBtnIcon, 
+        { scale: 0.65 }, 
+        { scale: 1, duration: 0.4, ease: 'back.out(2.2)' }
+      );
+    }
+  }, [activeTool]);
+
+  useEffect(() => {
+    if (showImageMenu) {
+      const imgIcon = document.querySelector(`#btn-image-import svg`);
+      if (imgIcon) {
+        gsap.killTweensOf(imgIcon);
+        gsap.fromTo(imgIcon, 
+          { scale: 0.65 }, 
+          { scale: 1, duration: 0.4, ease: 'back.out(2.2)' }
+        );
+      }
+    }
+  }, [showImageMenu]);
+
+  const showStrokeSettings = activeTool !== 'pointer' && activeTool !== 'eraser' && activeTool !== 'text';
+  const showTextSettings = activeTool === 'text';
+  const showSmoothingSettings = activeTool === 'brush';
+
+  useEffect(() => {
+    if (contextualRef.current) {
+      gsap.killTweensOf(contextualRef.current);
+      gsap.fromTo(
+        contextualRef.current,
+        { y: 15, scale: 0.94, opacity: 0 },
+        { y: 0, scale: 1, opacity: 1, duration: 0.35, ease: 'back.out(1.2)' }
+      );
+    }
+  }, [showStrokeSettings, showTextSettings, showSmoothingSettings, showImageMenu, showLinkInput]);
+
+  const triggerFileInput = () => {
+    fileInputRef.current?.click();
+    setShowImageMenu(false);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      onImportImageFile(file);
+    }
+    e.target.value = '';
+  };
+
+  const handleUrlSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (imageUrl.trim()) {
+      onImportImageUrl(imageUrl.trim());
+      setImageUrl('');
+      setShowLinkInput(false);
+      setShowImageMenu(false);
+    }
+  };
   const tools = [
     { id: 'pointer' as ToolType, label: 'Wskaźnik', icon: MousePointer },
     { id: 'brush' as ToolType, label: 'Pędzel', icon: Pencil },
@@ -50,19 +129,69 @@ export default function Toolbar({
     { id: 'var(--font-mono)', label: 'Mono' },
   ];
 
-  // Check if we need to show context settings
-  const showStrokeSettings = ['brush', 'rect', 'circle', 'triangle', 'star', 'eraser'].includes(activeTool);
-  const showTextSettings = activeTool === 'text';
-  const showSmoothingSettings = activeTool === 'brush';
-
   return (
     <div className="flex flex-col items-center gap-3 w-full pointer-events-none">
       {/* Contextual Floating Settings Menu (górna belka narzędziowa) */}
-      {(showStrokeSettings || showTextSettings || showSmoothingSettings) && (
-        <div className="flex items-center gap-4 px-4 py-2 rounded-2xl glass-panel shadow-lg pointer-events-auto transition-all duration-300 animate-in fade-in slide-in-from-bottom-2 text-sm text-gray-700 dark:text-gray-300">
+      {(showStrokeSettings || showTextSettings || showSmoothingSettings || showImageMenu) && (
+        <div
+          ref={contextualRef}
+          className="flex items-center gap-4 px-4 py-2 rounded-2xl glass-panel shadow-lg pointer-events-auto text-sm text-gray-700 dark:text-gray-300"
+        >
           
+          {/* Image Import Options */}
+          {showImageMenu && (
+            <div className="flex items-center gap-2 animate-in fade-in duration-200">
+              {showLinkInput ? (
+                <form
+                  onSubmit={handleUrlSubmit}
+                  className="flex items-center gap-2 text-xs pointer-events-auto"
+                >
+                  <input
+                    type="url"
+                    placeholder="Wklej bezpośredni URL obrazka/gifa..."
+                    value={imageUrl}
+                    onChange={(e) => setImageUrl(e.target.value)}
+                    className="bg-transparent border border-gray-300 dark:border-gray-700 rounded-xl px-3 py-1.5 w-60 outline-none text-xs text-gray-800 dark:text-gray-200 focus:border-indigo-500"
+                    autoFocus
+                  />
+                  <button
+                    type="submit"
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl font-semibold cursor-pointer transition-colors"
+                  >
+                    Dodaj
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowLinkInput(false)}
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 px-2 py-1 cursor-pointer font-medium"
+                  >
+                    Wróć
+                  </button>
+                </form>
+              ) : (
+                <div className="flex items-center gap-3 pointer-events-auto">
+                  <span className="text-xs font-semibold text-gray-400">Dodaj obrazek:</span>
+                  <button
+                    onClick={triggerFileInput}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800/60 cursor-pointer text-gray-700 dark:text-gray-300 transition-colors font-medium"
+                  >
+                    <UploadIcon className="w-4 h-4 text-[#6366f1]" />
+                    <span>Z dysku</span>
+                  </button>
+                  <button
+                    onClick={() => setShowLinkInput(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800/60 cursor-pointer text-gray-700 dark:text-gray-300 transition-colors font-medium"
+                  >
+                    <LinkIcon className="w-4 h-4 text-[#6366f1]" />
+                    <span>Z linku URL / GIF</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Stroke Width Selector */}
-          {showStrokeSettings && (
+          {showStrokeSettings && !showImageMenu && (
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium text-gray-400">Grubość:</span>
               <div className="flex gap-1">
@@ -84,12 +213,12 @@ export default function Toolbar({
           )}
 
           {/* Divider if both settings are shown */}
-          {showStrokeSettings && showSmoothingSettings && (
+          {showStrokeSettings && showSmoothingSettings && !showImageMenu && (
             <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
           )}
 
           {/* Brush Smoothing Toggle */}
-          {showSmoothingSettings && (
+          {showSmoothingSettings && !showImageMenu && (
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -102,7 +231,7 @@ export default function Toolbar({
           )}
 
           {/* Text-specific font family & style selector */}
-          {showTextSettings && (
+          {showTextSettings && !showImageMenu && (
             <div className="flex items-center gap-4">
               {/* Font Family */}
               <div className="flex items-center gap-2">
@@ -191,7 +320,41 @@ export default function Toolbar({
             </button>
           );
         })}
+
+        {/* Divider */}
+        <div className="w-px h-6 bg-gray-200 dark:bg-gray-800 self-center mx-1" />
+
+        {/* Add Image Button */}
+        <button
+          id="btn-image-import"
+          onClick={() => {
+            setShowImageMenu(!showImageMenu);
+            setShowLinkInput(false);
+          }}
+          className={`relative flex items-center justify-center w-11 h-11 rounded-[14px] cursor-pointer transition-all duration-200 group ${
+            showImageMenu
+              ? 'bg-[#6366f1] text-white shadow-[0_0_15px_rgba(99,102,241,0.4)]'
+              : 'text-gray-600 dark:text-[#a1a1aa] hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white'
+          }`}
+          title="Dodaj własny obrazek (lub animated GIF)"
+        >
+          <ImageIcon className="w-5 h-5 transition-transform duration-200 group-hover:scale-110" />
+          
+          {/* Tooltip */}
+          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 text-xs py-1 px-2.5 rounded-lg font-medium whitespace-nowrap shadow-md pointer-events-none z-50 animate-in fade-in zoom-in-95 duration-150">
+            Dodaj obrazek
+          </div>
+        </button>
       </div>
+
+      {/* Hidden file input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        accept="image/png, image/jpeg, image/jpg, image/gif"
+        className="hidden"
+      />
     </div>
   );
 }
