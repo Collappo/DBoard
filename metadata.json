@@ -1,6 +1,0 @@
-{
-  "name": "DBoard",
-  "description": "An interactive, highly optimized, minimalist infinite-canvas vector whiteboard with shapes, drawing tools, text, animated GIF support, selection & transformation controls, and light/dark themes.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
