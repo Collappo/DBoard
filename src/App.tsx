@@ -1561,7 +1561,7 @@ export default function App() {
           </div>
           <span className="font-sans font-bold tracking-tight text-sm text-gray-800 dark:text-gray-100">DBoard</span>
           <div className="bg-black/5 dark:bg-white/8 px-2 py-1 rounded-[6px] text-[10px] font-semibold text-gray-500 dark:text-[#a1a1aa] tracking-wider uppercase select-none">
-            Beta 0.8
+            Beta 0.0.1
           </div>
         </div>
 
